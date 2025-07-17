@@ -16,7 +16,7 @@ load_dotenv
 
 binance = ccxt.binance({
     'apiKey': os.getenv('BINANCE_API_KEY'),
-    'secret': os.getenv('BINANCE_SECRET_KEY'),
+    'secret': os.getenv('BINANCE_API_SECRET'),
     'sandbox': False,
     'enableRateLimit': True,
     'options': {
