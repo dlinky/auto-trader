@@ -1,0 +1,11 @@
+2025-07-20 00:23:29,782 - ERROR - 롱 포지션 진입 실패: binance amount of XRP/USDT:USDT must be greater than minimum amount precision of 0.1
+2025-07-20 00:24:17,366 - ERROR - 롱 포지션 진입 실패: binance amount of XRP/USDT:USDT must be greater than minimum amount precision of 0.1
+2025-07-20 00:24:47,006 - ERROR - 롱 포지션 진입 실패: binance amount of XRP/USDT:USDT must be greater than minimum amount precision of 0.1
+2025-07-20 00:25:01,252 - INFO - [주문] 진입 | XRP/USDT:USDT | test | BUY | 수량: 1.5 | 가격: 3.4112 | 타입: MARKET
+2025-07-20 00:25:01,253 - ERROR - 롱 포지션 진입 실패: BinanceClient.create_stop_loss_order() missing 1 required positional argument: 'strategy'
+2025-07-20 00:26:40,673 - INFO - [주문] 진입 | XRP/USDT:USDT | test | BUY | 수량: 1.5 | 가격: 3.4157 | 타입: MARKET
+2025-07-20 00:26:40,904 - INFO - 스탑로스 설정: XRP/USDT:USDT | test | 손절가: 3.244915 | 수량: 1.5
+2025-07-20 00:27:54,198 - INFO - [주문] 진입 | XRP/USDT:USDT | test | BUY | 수량: 1.5 | 가격: 3.4155 | 타입: MARKET
+2025-07-20 00:27:54,254 - INFO - 스탑로스 설정: XRP/USDT:USDT | test | 손절가: 3.244725 | 수량: 1.5
+2025-07-20 00:27:54,520 - INFO - [주문] 진입 | XRP/USDT:USDT | test | SELL | 수량: 1.5 | 가격: 3.4158 | 타입: MARKET
+2025-07-20 00:27:54,714 - INFO - 스탑로스 설정: XRP/USDT:USDT | test | 손절가: 3.58659 | 수량: 1.5
