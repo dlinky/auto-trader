@@ -1,21 +1,18 @@
 import os
-import logging
 import ccxt
 from dotenv import load_dotenv
+from src.utils.slack_bot import SlackBot
 
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('trader.log'),
-        logging.StreamHandler()
-    ]
-)
-
 class BinanceClient:
-    def __init__(self, use_testnet=False):
+    '''심볼/전략이 지정된 단일 거래소 클래스'''
+    def __init__(self, id, symbol, strategy, use_testnet=False):
+        self.trader_id = id
+        self.symbol = symbol
+        self.strategy = strategy
+
+        # 계정 설정
         if use_testnet:
             api_key = os.getenv('BINANCE_TESTNET_API_KEY')
             api_secret = os.getenv('BINANCE_TESTNET_API_SECRET')
@@ -26,9 +23,10 @@ class BinanceClient:
             sandbox = False
 
         if not api_key or not api_secret:
-            raise ValueError("API 키가 설정되지 않았습니다")
+            raise ValueError("API_KEY_MISSING")
         
-        config = {
+        # 계정 연결
+        exchange_config = {
             'apiKey': api_key,
             'secret': api_secret,
             'enableRateLimit': True,
@@ -37,126 +35,109 @@ class BinanceClient:
             },
             'sandbox': sandbox,
         }
+        self.exchange = ccxt.binance(exchange_config)
 
-        self.exchange = ccxt.binance(config)
-        self.logger = logging.getLogger(__name__)
-    
-    def check_environment(self):
+        # 슬랙 봇 연결
+        self.slack_bot =SlackBot()
+
+    def set_leverage(self, leverage):
         try:
-            account_info = self.exchange.fetch_balance()
-            if 'testnet' in str(self.exchange.urls):
-                print("테스트넷 환경")
-            else:
-                print("실제 거래 환경")
-        except Exception as e:
-            print(f"환경 확인 실패 : {e}")
-
-    def get_balance(self):
-        balance = self.exchange.fetch_balance()
-        usdt_balance = balance['USDT']
-        print(usdt_balance)
-
-    def get_position(self, symbol):
-        resp = self.exchange.fetch_open_orders(symbol=symbol)
-    
-    def get_all_positions(self):
-        """모든 포지션 조회 (0이 아닌 것만)"""
-        try:
-            positions = self.exchange.fetch_positions()
-            active_positions = [pos for pos in positions if pos['contracts']> 0]
-
-            self.logger.info(f"활성 포지션 {len(active_positions)}개 조회됨")
-            for pos in active_positions:
-                self.logger.info(f"포지션: {pos['symbol']} | 수량: {pos['contracts']} | PnL: {pos['unrealizedPnl']}")
-            
-            return active_positions
-        except Exception as e:
-            self.logger.error(f"포지션 조회 실패: {e}")
-            return []
-        
-    def close_position(self, symbol, strategy, side='market'):
-        """포지션 전체 청산"""
-        try:
-            position = self.exchange.fetch_position(symbol)
-            if position['contracts'] == 0:
-                self.logger.warning(f"{symbol} 포지션이 없습니다.")
-                return False
-            
-            side_to_close = 'sell' if position['side'] == 'long' else 'buy'
-            amount = abs(position['contracts'])
-
-            order = self.exchange.create_market_order(
-                symbol=symbol,
-                side=side_to_close,
-                amount=amount,
-                params={'reduceOnly': True}
-            )
-            
-            self.logger.info(f"포지션 청산 성공: {symbol} | {strategy}, 수량: {amount} | 주문ID: {order['id']}")
-            return order
-        
-        except Exception as e:
-            self.logger.error(f"포지션 청산 실패 {symbol}: {e}")
-            return None
-        
-    def set_leverage(self, symbol, strategy, leverage):
-        try:
-            result = self.exchange.set_leverage(leverage, symbol)
-            self.logger.info(f"레버리지 설정 완료: {symbol} | {strategy} | x{leverage}")
+            result = self.exchange.set_leverage(leverage, self.symbol)
+            self.logger.info(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 레버리지 설정 완료: x{leverage}")
             return result
         except Exception as e:
-            self.logger.error(f"레버리지 설정 실패 {symbol}: {e}")
+            self.logger.error(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 레버리지 설정 실패: {e}")
             return None
     
-    def get_min_amount(self, symbol):
-        symbol_text = symbol.split(':')[0]
+    def get_min_amount(self):
+        '''주문하기 위한 최소수량 계산'''
+        symbol_text = self.symbol.split(':')[0]
         market = self.exchange.load_markets()[symbol_text]
         market_limit = market['limits']
         market_precision = market['precision']
-        ticker = self.exchange.fetch_ticker(symbol)
+        ticker = self.exchange.fetch_ticker(self.symbol)
 
+        # amount 기반, cost 기반 최소수량 중 큰 값을 반환
         limit_min_amount = market_limit['amount']['min']
         limit_min_cost = market_limit['cost']['min']
         current_price = ticker['last']
-        min_amount_by_cost = float(self.exchange.amount_to_precision(symbol, limit_min_cost/current_price))+market_precision['amount']
+        min_amount_by_cost = float(self.exchange.amount_to_precision(self.symbol, limit_min_cost/current_price))+market_precision['amount']
         real_min_amount = max(limit_min_amount, min_amount_by_cost)
 
         return real_min_amount
     
-    def get_ticker(self, symbol):
-        tickers = self.exchange.fetch_tickers()
-        print(tickers[symbol])
+    def open_market_position(self, side, amount):
+        '''시장가 주문 입력'''
+        try:
+            amount = max(self.get_min_amount(), amount)
+            order = self.exchange.create_order(
+                symbol=self.symbol,
+                type='market',
+                side=side,
+                amount=amount
+            )
+            side_text = "롱" if side=="buy" else "sell"
+            self.logger.info(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] {side_text} 포지션 진입 : 수량= {amount} | 금액= {order['cost']}")
+            self.slack_bot.send_trade_alert(
+                trader_id=self.trader_id,
+                symobl=self.symbol,
+                strategy=self.strategy,
+                action=f"{side.upper()} 주문",
+                details=f"수량: {amount}, 가격: ${order['average']:.2f}"
+            )
+            return order
+        
+        except Exception as e:
+            self.logger.error(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] {side_text} 포지션 진입 실패 : {e}")
+            self.slack_bot.send_error_alert(
+                error_message=str(e),
+                context=f"{self.trader_id} {self.symbol} {side} 주문"
+            )
+            return None
 
-    def create_stop_loss_order(self, symbol, strategy, stop_price, side, quantity=None):
+    def create_market_stop_loss_order(self, side, amount, stop_price):
+        '''시장가 스탑로스 주문 입력 - 포지션 청산용'''
         try:
             order = self.exchange.create_order(
-                symbol=symbol,
+                symbol=self.symbol,
                 type='stop_market',
                 side=side,
-                amount=quantity,
+                amount=amount,
                 params={
                     'stopPrice': stop_price,
                     'reduceOnly': True
                 }
             )
 
-            self.logger.info(f"스탑로스 설정: {symbol} | {strategy} | 손절가: {stop_price} | 수량: {quantity}")
+            self.logger.info(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 스탑로스 설정 : 손절가= {stop_price} | 수량= {amount}")
             return order
         
         except Exception as e:
-            self.logger.error(f"스탑로스 설정 실패 {symbol} | {strategy}: {e}")
+            self.logger.error(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 스탑로스 설정 실패 : {e}")
+            return None
+        
+    def close_position(self):
+        '''포지션 전체 강제 청산'''
+        try:
+            position = self.exchange.fetch_position(self.symbol)
+            if position['contracts'] == 0:
+                self.logger.warning(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 진입한 포지션이 없습니다.")
+                return False
+            
+            side_to_close = 'sell' if position['side'] == 'long' else 'buy'
+            amount = abs(position['contracts'])
+
+            order = self.exchange.create_market_order(
+                symbol=self.symbol,
+                side=side_to_close,
+                amount=amount,
+                params={'reduceOnly': True}
+            )
+            
+            self.logger.info(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 포지션 청산 성공 : 수량= {amount} ")
+            return order
+        
+        except Exception as e:
+            self.logger.error(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 포지션 청산 실패: {e}")
             return None
 
-def main():
-    symbol = "XRP/USDT:USDT"
-    client = BinanceClient(use_testnet=True)
-    client.check_environment()
-    client.get_balance()
-    client.get_position(symbol)
-
-    min_amount = client.get_min_amount(symbol)
-    resp = client.exchange.create_market_buy_order(symbol, min_amount)
-    print('orderId = ', resp['info']['orderId'])
-
-if __name__=="__main__":
-    main()
