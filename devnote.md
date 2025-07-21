@@ -49,3 +49,6 @@
 
 ### Day 3: 슬랙 봇 연동
 - 간단한 알림 메시지 테스트
+
+### Day 4: SQL 스키마 설계
+python create_database.py

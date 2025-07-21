@@ -1,2 +1,7 @@
 logs/
+*.log
+data/
+*.db
+*.sqlite
+*.sqlite3
 .env
