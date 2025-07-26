@@ -1,16 +1,21 @@
 import os
 import ccxt
 from dotenv import load_dotenv
-from src.utils.slack_bot import SlackBot
+from utils.slack_bot import SlackBot
+from datetime import datetime, timedelta
 
 load_dotenv()
 
 class BinanceClient:
     '''심볼/전략이 지정된 단일 거래소 클래스'''
-    def __init__(self, id, symbol, strategy, use_testnet=False):
+    def __init__(self, id=None, symbol='BTC/USDT:USDT', strategy='ma', balance=0, use_testnet=False):
         self.trader_id = id
         self.symbol = symbol
         self.strategy = strategy
+        self.started_at = datetime.now().isoformat()
+        self.status = 'none'
+        self.start_balance = balance
+        self.current_balance = self.start_balance
 
         # 계정 설정
         if use_testnet:
@@ -141,3 +146,13 @@ class BinanceClient:
             self.logger.error(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] 포지션 청산 실패: {e}")
             return None
 
+    def fetch_ohlcv(self, timeframe='1m', limit=1):
+        '''OHLCV 가져오기'''
+        try:
+            ohlcv = self.exchange.fetch_ohlcv(self.symbol, timeframe, limit=limit)
+            self.logger.info(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] OHLCV 조회")
+            return ohlcv
+
+        except Exception as e:
+            self.logger.error(f"[id:{self.trader_id}][{self.symbol}][{self.strategy}] OHLCV 조회 실패: {e}")
+            
